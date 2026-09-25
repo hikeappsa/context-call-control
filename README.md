@@ -37,6 +37,40 @@ All routes except the media webhook and health checks require `Authorization: Be
 
 When `DEV_CONTEXTS_ENABLED=true`, `POST /v1/dev/contexts` inserts an example context. Leave that flag off outside local development.
 
+## Errors
+
+Failed requests use one JSON shape. Clients should branch on `code` and can show `message` directly.
+
+```json
+{
+  "statusCode": 409,
+  "code": "PARTICIPANT_BUSY",
+  "message": "You or the other person is already on a call."
+}
+```
+
+`details` is present when the client needs a value as well as the sentence, for example `{ "status": "active" }` on `CALL_CONFLICT`.
+
+| Code | When |
+| --- | --- |
+| `FEATURE_DISABLED` | Calling is turned off |
+| `CONTEXT_NOT_FOUND` | The context does not exist |
+| `CONTEXT_NOT_ACTIVE` | The context no longer allows a call |
+| `NOT_A_PARTICIPANT` | The caller is not one of the two people |
+| `PARTICIPANT_BUSY` | Either person already has a live call |
+| `CALLEE_UNREACHABLE` | The invite reached no device |
+| `INVITE_DELIVERY_FAILED` | Push delivery failed |
+| `CALL_NOT_FOUND` | The call does not exist for this person |
+| `CALLEE_ONLY` | Only the invited person can answer or decline |
+| `CALLER_ONLY` | Only the caller can cancel |
+| `CALL_EXPIRED` | The ring time has passed |
+| `CALL_CONFLICT` | The call already moved to another state |
+| `INVALID_CONTEXT`, `INVALID_CALL_ID`, `IDEMPOTENCY_KEY_REQUIRED` | The request itself is invalid |
+| `MISSING_TOKEN`, `INVALID_TOKEN` | The session is missing or not valid |
+| `DATABASE_UNAVAILABLE`, `INTERNAL` | The service could not complete the request |
+
+`GET /v1/calls/availability` returns `{ "available": false, "reason": "<code>" }` for the context and feature codes instead of an error.
+
 ## Local stack
 
 Requirements: Docker, Node.js 20+.

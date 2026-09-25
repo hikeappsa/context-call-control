@@ -41,7 +41,7 @@ const OPAQUE_ID = /^[A-Za-z0-9_.:-]{1,128}$/;
 export function opaqueId(value: unknown, label: string, max = 128): string {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!OPAQUE_ID.test(text) || text.length > max) {
-    throw new Error(`${label} must be 1-${max} characters from [A-Za-z0-9_.:-]`);
+    throw new Error(`${label} must be 1-${max} characters and use only letters, numbers, and _ . : -`);
   }
   return text;
 }

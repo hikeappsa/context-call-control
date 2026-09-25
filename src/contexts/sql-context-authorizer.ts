@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ContextAccessError } from '../common/domain-error';
 import { DatabaseService } from '../database/database.service';
 import type { CallParties, ContextAuthorizer } from '../ports/context-authorizer';
 
@@ -18,15 +19,15 @@ export class SqlContextAuthorizer implements ContextAuthorizer {
 
   async resolve(userId: string, contextType: string, contextId: string): Promise<CallParties> {
     const row = await this.load(contextType, contextId);
-    if (!row) throw new NotFoundException('Context not found');
-    if (!row.active) throw new ForbiddenException('Calling is unavailable for this context');
+    if (!row) throw new ContextAccessError('CONTEXT_NOT_FOUND', 'This context could not be found.');
+    if (!row.active) throw new ContextAccessError('CONTEXT_NOT_ACTIVE', 'Calling is not available for this context.');
     if (userId === row.participant_a) {
       return this.parties(row, row.participant_a, row.participant_b, row.name_a, row.name_b);
     }
     if (userId === row.participant_b) {
       return this.parties(row, row.participant_b, row.participant_a, row.name_b, row.name_a);
     }
-    throw new ForbiddenException('You are not a participant in this context');
+    throw new ContextAccessError('NOT_A_PARTICIPANT', 'You are not a participant in this context.');
   }
 
   async stillAllowed(contextType: string, contextId: string): Promise<boolean> {

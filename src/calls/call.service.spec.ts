@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { beforeEach, describe, it } from 'node:test';
-import { ConflictException, ForbiddenException, GoneException, ServiceUnavailableException } from '@nestjs/common';
+import { ApiError } from '../common/api-error';
+import { ContextAccessError, ParticipantBusyError } from '../common/domain-error';
 import type { CallParties, ContextAuthorizer } from '../ports/context-authorizer';
 import type { AuthUser } from '../ports/identity';
 import type { MediaSession } from '../ports/media-session';
@@ -18,9 +19,11 @@ class FakeAuthorizer implements ContextAuthorizer {
 
   async resolve(userId: string, contextType: string, contextId: string): Promise<CallParties> {
     const pair = this.pairs.get(`${contextType}:${contextId}`);
-    if (!pair || !this.allowed) throw new ForbiddenException('Calling is unavailable for this context');
+    if (!pair || !this.allowed) {
+      throw new ContextAccessError('CONTEXT_NOT_ACTIVE', 'Calling is not available for this context.');
+    }
     if (userId !== pair[0] && userId !== pair[1]) {
-      throw new ForbiddenException('You are not a participant in this context');
+      throw new ContextAccessError('NOT_A_PARTICIPANT', 'You are not a participant in this context.');
     }
     const calleeId = userId === pair[0] ? pair[1] : pair[0];
     return {
@@ -122,13 +125,13 @@ describe('call control', () => {
   it('blocks a second live call for either participant', async () => {
     await service.start(alice, 'session', 'demo', 'key-1');
     authorizer.pairs.set('session:other', ['bob', 'carol']);
-    await assert.rejects(() => service.start(bob, 'session', 'other', 'key-2'), ConflictException);
+    await assert.rejects(() => service.start(bob, 'session', 'other', 'key-2'), ParticipantBusyError);
   });
 
   it('lets only the callee decline and only the caller cancel', async () => {
     const started = await service.start(alice, 'session', 'demo', 'key-1');
-    await assert.rejects(() => service.decline(alice.userId, started.callId), ForbiddenException);
-    await assert.rejects(() => service.cancel(bob.userId, started.callId), ForbiddenException);
+    await expectCode(service.decline(alice.userId, started.callId), 'CALLEE_ONLY');
+    await expectCode(service.cancel(bob.userId, started.callId), 'CALLER_ONLY');
     const declined = await service.decline(bob.userId, started.callId);
     assert.equal(declined.status, 'declined');
     assert.equal(media.closed[0], `call-${started.callId}`);
@@ -137,7 +140,7 @@ describe('call control', () => {
   it('marks an expired invite as missed', async () => {
     const started = await service.start(alice, 'session', 'demo', 'key-1');
     store.expireForTest(started.callId);
-    await assert.rejects(() => service.accept(bob, started.callId), GoneException);
+    await expectCode(service.accept(bob, started.callId), 'CALL_EXPIRED');
     const stored = await store.findForParticipant(started.callId, bob.userId);
     assert.equal(stored?.status, 'missed');
     assert.equal(stored?.endReason, 'ring_timeout');
@@ -145,7 +148,7 @@ describe('call control', () => {
 
   it('fails the call when the invite reaches nobody', async () => {
     push.delivered = 0;
-    await assert.rejects(() => service.start(alice, 'session', 'demo', 'key-1'), GoneException);
+    await expectCode(service.start(alice, 'session', 'demo', 'key-1'), 'CALLEE_UNREACHABLE');
     const stored = await store.findActiveForUser(alice.userId);
     assert.equal(stored, null);
     const missed = await service.start(alice, 'session', 'demo', 'key-1');
@@ -154,14 +157,14 @@ describe('call control', () => {
 
   it('fails the call when invite delivery throws', async () => {
     push.fail = true;
-    await assert.rejects(() => service.start(alice, 'session', 'demo', 'key-1'), ServiceUnavailableException);
+    await expectCode(service.start(alice, 'session', 'demo', 'key-1'), 'INVITE_DELIVERY_FAILED');
     push.fail = false;
     const replay = await service.start(alice, 'session', 'demo', 'key-1');
     assert.equal(replay.status, 'failed');
   });
 
   it('refuses a caller who is not in the context', async () => {
-    await assert.rejects(() => service.start(carol, 'session', 'demo', 'key-1'), ForbiddenException);
+    await assert.rejects(() => service.start(carol, 'session', 'demo', 'key-1'), ContextAccessError);
   });
 
   it('does not treat a media join as an answer while ringing', async () => {
@@ -193,3 +196,14 @@ describe('call control', () => {
     assert.equal(push.terminals.length, 2);
   });
 });
+
+async function expectCode(work: Promise<unknown>, code: string): Promise<void> {
+  await assert.rejects(work, (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    const body = error.getResponse() as { code?: string; message?: string };
+    assert.equal(body.code, code);
+    assert.equal(typeof body.message, 'string');
+    assert.ok(body.message && body.message.length > 0);
+    return true;
+  });
+}

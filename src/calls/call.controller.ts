@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiError } from '../common/api-error';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { DevJwtGuard } from '../auth/dev-jwt.guard';
 import { opaqueId } from '../config/env';
@@ -30,7 +31,9 @@ export class CallController {
   ) {
     const context = readContext(body?.contextType, body?.contextId);
     const key = idempotencyKey?.trim() ?? '';
-    if (!key || key.length > 100) throw new BadRequestException('Idempotency-Key is required');
+    if (!key || key.length > 100) {
+      throw ApiError.badRequest('IDEMPOTENCY_KEY_REQUIRED', 'Send an Idempotency-Key header and try the call again.');
+    }
     return this.calls.start(user, context.contextType, context.contextId, key);
   }
 
@@ -68,11 +71,11 @@ function readContext(contextType: unknown, contextId: unknown): { contextType: s
       contextId: opaqueId(contextId, 'contextId', 128),
     };
   } catch (error) {
-    throw new BadRequestException(error instanceof Error ? error.message : 'Invalid context');
+    throw ApiError.badRequest('INVALID_CONTEXT', error instanceof Error ? error.message : 'The context is not valid.');
   }
 }
 
 function readCallId(value: string): string {
-  if (!CALL_ID.test(value)) throw new BadRequestException('callId must be a UUID');
+  if (!CALL_ID.test(value)) throw ApiError.badRequest('INVALID_CALL_ID', 'The call id is not valid.');
   return value;
 }

@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ApiError } from '../common/api-error';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 
@@ -101,7 +102,11 @@ export class DeviceEndpointService {
 function normalize(input: RegisterEndpointInput): NormalizedEndpoint {
   const pushToken = optionalSecret(input.pushToken, 'pushToken');
   const voipToken = optionalSecret(input.voipToken, 'voipToken');
-  if (!pushToken && !voipToken) throw new BadRequestException('A push token or VoIP token is required');
+  if (!pushToken && !voipToken) {
+    throw ApiError.badRequest('PUSH_TOKEN_REQUIRED', 'Register a push token or a VoIP token for this device.', {
+      field: 'pushToken',
+    });
+  }
   return {
     deviceId: token(input.deviceId, 'deviceId', 128),
     clientKind: token(input.clientKind, 'clientKind', 32),
@@ -116,7 +121,9 @@ function normalize(input: RegisterEndpointInput): NormalizedEndpoint {
 function token(value: unknown, label: string, max: number): string {
   const text = typeof value === 'string' ? value.trim() : '';
   if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(text) || text.length > max) {
-    throw new BadRequestException(`${label} must be 1-${max} characters from [A-Za-z0-9_.:-]`);
+    throw ApiError.badRequest('INVALID_REQUEST', `${label} must be 1-${max} characters: letters, numbers, and _ . : -`, {
+      field: label,
+    });
   }
   return text;
 }
@@ -129,6 +136,8 @@ function optionalToken(value: unknown, label: string, max: number): string | nul
 function optionalSecret(value: unknown, label: string): string | null {
   if (value === undefined || value === null || value === '') return null;
   const text = typeof value === 'string' ? value.trim() : '';
-  if (!text || text.length > 2048) throw new BadRequestException(`${label} must be 1-2048 characters`);
+  if (!text || text.length > 2048) {
+    throw ApiError.badRequest('INVALID_REQUEST', `${label} must be 1-2048 characters.`, { field: label });
+  }
   return text;
 }
