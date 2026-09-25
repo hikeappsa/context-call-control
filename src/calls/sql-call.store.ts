@@ -1,4 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ParticipantBusyError } from '../common/domain-error';
 import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import type { CallStore } from './call-store';
@@ -55,7 +56,7 @@ export class SqlCallStore implements CallStore {
           [parties],
         );
         if (busy.rowCount) {
-          throw new ConflictException('You or the other participant is already in another call.');
+          throw new ParticipantBusyError();
         }
 
         const inserted = await client.query<CallRow>(

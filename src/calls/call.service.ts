@@ -1,14 +1,7 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  GoneException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { ApiError } from '../common/api-error';
+import { ContextAccessError } from '../common/domain-error';
 import { callsEnabled, retentionDays, ringSeconds } from '../config/env';
 import { CONTEXT_AUTHORIZER, type ContextAuthorizer } from '../ports/context-authorizer';
 import { MEDIA_SESSION, type MediaSession } from '../ports/media-session';
@@ -34,15 +27,13 @@ export class CallService {
       await this.authorization.resolve(user.userId, contextType, contextId);
       return { available: true };
     } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
-        return { available: false, reason: 'CONTEXT_NOT_ACTIVE' };
-      }
+      if (error instanceof ContextAccessError) return { available: false, reason: error.code };
       throw error;
     }
   }
 
   async start(user: AuthUser, contextType: string, contextId: string, idempotencyKey: string) {
-    if (!callsEnabled()) throw new ForbiddenException('Calling is not available right now.');
+    if (!callsEnabled()) throw ApiError.forbidden('FEATURE_DISABLED', 'Calling is not available right now.');
     const parties = await this.authorization.resolve(user.userId, contextType, contextId);
     const callId = randomUUID();
     const roomName = `call-${callId}`;
@@ -72,15 +63,15 @@ export class CallService {
         contextId,
         expiresAt: created.session.expiresAt,
       });
-    } catch (error) {
+    } catch {
       this.logger.error(`Invite failed for call ${created.session.callId}`);
       await this.store.failRinging(created.session.callId, 'invite_delivery_failed');
-      throw new ServiceUnavailableException('Unable to deliver call invite', { cause: error });
+      throw ApiError.unavailable('INVITE_DELIVERY_FAILED', 'The call invite could not be delivered. Try again.');
     }
 
     if (!delivered) {
       await this.store.failRinging(created.session.callId, 'callee_unreachable');
-      throw new GoneException('The other participant is not reachable for calls right now');
+      throw ApiError.gone('CALLEE_UNREACHABLE', 'The other person has no device that can receive this call.');
     }
 
     await this.store.setInviteCount(created.session.callId, delivered);
@@ -95,7 +86,7 @@ export class CallService {
     try {
       parties = await this.authorization.resolve(user.userId, session.contextType, session.contextId);
     } catch (error) {
-      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+      if (error instanceof ContextAccessError) {
         await this.store.transition(session.callId, ['ringing', 'answered', 'connecting', 'active'], 'ended', 'context_ended', null);
         await this.media.closeRoom(session.roomName);
         return null;
@@ -111,7 +102,7 @@ export class CallService {
   async accept(user: AuthUser, callId: string) {
     const session = await this.requireParticipant(callId, user.userId);
     if (session.calleeId !== user.userId) {
-      throw new ForbiddenException('This call can only be answered by the invited participant.');
+      throw ApiError.forbidden('CALLEE_ONLY', 'Only the invited person can answer this call.');
     }
     const parties = await this.authorization.resolve(user.userId, session.contextType, session.contextId);
     if (session.status === 'answered' || session.status === 'active' || (session.status === 'connecting' && session.answeredAt)) {
@@ -120,7 +111,7 @@ export class CallService {
     }
     if (Date.parse(session.expiresAt) <= Date.now()) {
       await this.transition(callId, user.userId, ['ringing', 'connecting'], 'missed', 'ring_timeout');
-      throw new GoneException('Call invitation expired');
+      throw ApiError.gone('CALL_EXPIRED', 'This call invitation has expired.');
     }
     const updated = await this.transition(callId, user.userId, ['ringing', 'connecting'], 'answered', null);
     const token = await this.media.issueToken(updated.roomName, user.userId, user.displayName);
@@ -130,7 +121,7 @@ export class CallService {
   async decline(userId: string, callId: string) {
     const session = await this.requireParticipant(callId, userId);
     if (session.calleeId !== userId) {
-      throw new ForbiddenException('This call can only be declined by the invited participant.');
+      throw ApiError.forbidden('CALLEE_ONLY', 'Only the invited person can decline this call.');
     }
     return this.finish(callId, userId, ['ringing'], 'declined', 'declined');
   }
@@ -184,7 +175,7 @@ export class CallService {
   ) {
     const session = await this.requireParticipant(callId, userId);
     if (callerOnly && session.callerId !== userId) {
-      throw new ForbiddenException('Only the person who started this call can cancel it.');
+      throw ApiError.forbidden('CALLER_ONLY', 'Only the person who started this call can cancel it.');
     }
     if (isTerminal(session.status)) return this.present(session, userId);
 
@@ -192,7 +183,7 @@ export class CallService {
     if (!updated) {
       const current = await this.requireParticipant(callId, userId);
       if (current.status === status || isTerminal(current.status)) return this.present(current, userId);
-      throw new ConflictException(`This call is already ${current.status}.`);
+      throw conflict(current.status);
     }
     await this.closeAndNotify(updated, reason, userId);
     return this.present(updated, userId);
@@ -209,12 +200,12 @@ export class CallService {
     if (updated) return updated;
     const current = await this.requireParticipant(callId, actorId);
     if (current.status === to) return current;
-    throw new ConflictException(`This call is already ${current.status}.`);
+    throw conflict(current.status);
   }
 
   private async requireParticipant(callId: string, userId: string): Promise<CallSession> {
     const session = await this.store.findForParticipant(callId, userId);
-    if (!session) throw new NotFoundException('This call is no longer available.');
+    if (!session) throw ApiError.notFound('CALL_NOT_FOUND', 'This call is no longer available.');
     return session;
   }
 
@@ -240,5 +231,30 @@ export class CallService {
       endReason: session.endReason,
       ...(participantToken ? { serverUrl: this.media.serverUrl(), participantToken } : {}),
     };
+  }
+}
+
+function conflict(status: string): ApiError {
+  return ApiError.conflict('CALL_CONFLICT', conflictMessage(status), { status });
+}
+
+function conflictMessage(status: string): string {
+  switch (status) {
+    case 'ringing':
+      return 'This call is still ringing.';
+    case 'answered':
+    case 'connecting':
+    case 'active':
+      return 'This call is already in progress.';
+    case 'declined':
+      return 'This call was declined.';
+    case 'missed':
+      return 'This call was missed.';
+    case 'cancelled':
+      return 'This call was cancelled.';
+    case 'ended':
+      return 'This call has ended.';
+    default:
+      return 'This call could not be completed.';
   }
 }

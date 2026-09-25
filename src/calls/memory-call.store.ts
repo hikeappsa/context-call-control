@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ParticipantBusyError } from '../common/domain-error';
 import type { CallStore } from './call-store';
 import { isLive, type CallSession, type CallStatus, type NewRingingCall } from './call.types';
 
@@ -18,7 +18,7 @@ export class MemoryCallStore implements CallStore {
           isLive(session.status) &&
           [session.callerId, session.calleeId].some((id) => id === input.callerId || id === input.calleeId),
       );
-      if (busy) throw new ConflictException('You or the other participant is already in another call.');
+      if (busy) throw new ParticipantBusyError();
 
       const session: CallSession = {
         callId: input.callId,

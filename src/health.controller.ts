@@ -1,4 +1,5 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
+import { ApiError } from './common/api-error';
 import { DatabaseService } from './database/database.service';
 
 @Controller('health')
@@ -16,7 +17,7 @@ export class HealthController {
       await this.database.ping();
       return { status: 'ok' };
     } catch {
-      throw new ServiceUnavailableException('Database unavailable');
+      throw ApiError.unavailable('DATABASE_UNAVAILABLE', 'The service cannot reach its database.');
     }
   }
 }

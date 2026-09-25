@@ -22,6 +22,10 @@ sequenceDiagram
   Api->>Media: issue caller token
 ```
 
+## Errors
+
+Domain code throws `ContextAccessError` and `ParticipantBusyError`. HTTP adapters throw `ApiError`. Neither type knows about product tables. `HttpErrorFilter` turns both into `{ statusCode, code, message }`. Unexpected exceptions become `INTERNAL` with a fixed sentence, so a client never receives a stack trace or a driver message.
+
 ## Ports
 
 ### Identity
