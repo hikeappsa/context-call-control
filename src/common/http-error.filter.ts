@@ -1,12 +1,15 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import type { Response } from 'express';
+
+interface JsonResponse {
+  status(code: number): { json(body: unknown): void };
+}
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpErrorFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    const response = host.switchToHttp().getResponse<JsonResponse>();
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const body = exception.getResponse();
