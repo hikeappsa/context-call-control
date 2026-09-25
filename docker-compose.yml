@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: calls
+      POSTGRES_PASSWORD: calls
+      POSTGRES_DB: calls
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U calls -d calls"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  livekit:
+    image: livekit/livekit-server:v1.9.0
+    command: ["--config", "/etc/livekit.yaml"]
+    volumes:
+      - ./deploy/livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
+      - "127.0.0.1:7882:7882/udp"
+
+  api:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://calls:calls@postgres:5432/calls
+      CALLS_ENABLED: "true"
+      DEV_CONTEXTS_ENABLED: "true"
+      DEV_JWT_SECRET: local-dev-secret-change-me
+      CALL_RING_SECONDS: "30"
+      CALL_TOKEN_TTL_SECONDS: "30"
+      CALL_RETENTION_DAYS: "90"
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    ports:
+      - "127.0.0.1:8080:8080"

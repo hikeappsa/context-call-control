@@ -1,0 +1,13 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+keys:
+  devkey: secret
+webhook:
+  api_key: devkey
+  urls:
+    - http://api:8080/v1/webhooks/media
+logging:
+  level: info
