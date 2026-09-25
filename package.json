@@ -1,0 +1,32 @@
+{
+  "name": "context-call-control",
+  "version": "0.1.0",
+  "description": "Reference control plane for context-scoped one-to-one audio calls.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:dev": "tsx watch src/main.ts",
+    "dev-token": "tsx scripts/dev-token.ts",
+    "test": "npm run build && node --test dist/**/*.spec.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "jose": "^6.1.0",
+    "livekit-server-sdk": "2.14.1",
+    "pg": "^8.16.3",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}
