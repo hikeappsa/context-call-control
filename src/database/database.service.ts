@@ -40,8 +40,9 @@ export class DatabaseService implements OnModuleDestroy {
     }
   }
 
-  query<T extends Record<string, unknown> = Record<string, unknown>>(text: string, values: unknown[] = []) {
-    return this.pool.query<T>(text, values);
+  async query<T>(text: string, values: unknown[] = []): Promise<{ rows: T[]; rowCount: number | null }> {
+    const result = await this.pool.query(text, values);
+    return { rows: result.rows as T[], rowCount: result.rowCount };
   }
 
   async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {

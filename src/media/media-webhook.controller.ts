@@ -1,6 +1,9 @@
 import { Controller, Headers, Inject, Post, Req, UnauthorizedException, type RawBodyRequest } from '@nestjs/common';
-import type { Request } from 'express';
 import { CallService } from '../calls/call.service';
+
+interface WebhookRequest {
+  rawBody?: Buffer;
+}
 import { MEDIA_WEBHOOK_VERIFIER, type MediaWebhookVerifier } from '../ports/media-webhook';
 
 const ROOM_PREFIX = 'call-';
@@ -14,7 +17,7 @@ export class MediaWebhookController {
   ) {}
 
   @Post('media')
-  async receive(@Req() request: RawBodyRequest<Request>, @Headers('authorization') authorization?: string) {
+  async receive(@Req() request: RawBodyRequest<WebhookRequest>, @Headers('authorization') authorization?: string) {
     if (!request.rawBody) throw new UnauthorizedException('Raw webhook body unavailable');
     let event;
     try {
